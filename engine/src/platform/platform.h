@@ -7,7 +7,7 @@ typedef struct platform_state
     void* internal_state;
 }platform_state;
 
-KAPI b8 platform_startup(
+b8 platform_startup(
     platform_state* plat_state,
     char const* application_name,
     i32 x,
@@ -16,16 +16,17 @@ KAPI b8 platform_startup(
     i32 height
 );
 
-KAPI void platform_shutdown(platform_state* plat_state);
+// We don't want to exposure platform interfaces.
+void platform_shutdown(platform_state* plat_state);
 
 // Application calls this once every single loop.
-KAPI b8 platform_pump_messages(platform_state* plat_state);
+b8 platform_pump_messages(platform_state* plat_state);
 
 // Memmory allocation and deallocation is also
 // platform related.
 
-void* platform_allocate(u64 size, b8 aligned);
-void platfrom_free(void* block, b8 aligned);
+KAPI void* platform_allocate(u64 size, b8 aligned);
+KAPI void platfrom_free(void* block, b8 aligned);
 void platform_zero_memory(void* block, u64 size);
 void platform_copy_memory(void* dest, void const* source, u64 size);
 void platform_set_memory(void* block, i32 value, u64 size);
