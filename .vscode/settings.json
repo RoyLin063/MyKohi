@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "logger.h": "c",
-        "game_types.h": "c"
+        "game_types.h": "c",
+        "platform.h": "c",
+        "kmemory.h": "c"
     }
 }
