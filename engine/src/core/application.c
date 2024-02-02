@@ -3,6 +3,11 @@
 #include "logger.h"
 #include "platform/platform.h"
 #include "core/kmemory.h"
+#include "core/event.h"
+#include "core/input.h"
+#include "core/clock.h"
+
+#include "renderer/renderer_frontend.h"
 
 typedef struct application_state
 {
@@ -12,6 +17,7 @@ typedef struct application_state
     platform_state platform;
     i16 width;
     i16 height;
+    clock clock;
     f64 last_time;  // Last time game update.
 } application_state;
 
@@ -31,6 +37,7 @@ KAPI b8 application_create(game* game_inst)
     // Initialize subsystems.
     // You can rite to a log file after this initialization.
     initialize_logging();
+    input_initialize();
 
     // TODO: Remove this.
     KFATAL("A test message: %f", 3.14f);
@@ -43,6 +50,12 @@ KAPI b8 application_create(game* game_inst)
     app_state.is_running = TRUE;
     app_state.is_suspended = FALSE;
 
+    if (!event_initialize())
+    {
+        KERROR("Event system failed initalization. Application cannot continue.");
+        return FALSE;
+    }
+
     if (!platform_startup(
             &app_state.platform, 
             game_inst->app_config.name,
@@ -51,6 +64,13 @@ KAPI b8 application_create(game* game_inst)
             game_inst->app_config.start_width,
             game_inst->app_config.start_height))
     {
+        return FALSE;
+    }
+
+    // Renderer startup
+    if (!renderer_initialize(game_inst->app_config.name, &app_state.platform))
+    {
+        KFATAL("Failed to initialize renderer. Aborting application.");
         return FALSE;
     }
 
@@ -71,6 +91,14 @@ KAPI b8 application_create(game* game_inst)
 
 KAPI b8 application_run()
 {
+    clock_start(&app_state.clock);
+    clock_update(&app_state.clock);
+
+    app_state.last_time = app_state.clock.elapsed;
+    f64 running_time = 0;
+    u8 frame_count = 0;
+    f64 target_frame_seconds = 1.0f/60.0f;
+
     KINFO(get_memory_usage_str());
     while(app_state.is_running)
     {
@@ -80,6 +108,12 @@ KAPI b8 application_run()
         }
         if (!app_state.is_suspended)
         {
+            // Update clock and get delta time.
+            clock_update(&app_state.clock);
+            f64 current_time = app_state.clock.elapsed;
+            f64 delta = current_time - app_state.last_time;
+            f64 frame_start_time = platform_get_absolute_time();
+
             if (!app_state.game_inst->update(app_state.game_inst, (f32)0))
             {
                 KFATAL("Game update failed, shutting down.");
@@ -94,9 +128,47 @@ KAPI b8 application_run()
                 app_state.is_running = FALSE;
                 break;
             }
+
+            render_packet packet;
+            packet.delta_time = delta;
+            renderer_draw_frame(&packet);
+
+            // Figure out how long the frame took and, if below
+            f64 frame_end_time = platform_get_absolute_time();
+            f64 frame_elapsed_time = frame_end_time - frame_start_time;
+            running_time += frame_elapsed_time;
+            f64 remaining_seconds = target_frame_seconds - frame_elapsed_time;
+
+            if (remaining_seconds > 0)
+            {
+                u64 remaining_ms = (remaining_seconds * 1000);
+
+                // If there is time left, give it back to the OS.
+                b8 limit_frames = FALSE;
+                if (remaining_ms > 0 && limit_frames)
+                {
+                    platform_sleep(remaining_ms - 1);
+                }
+                frame_count++;
+            }
+            // NOTE: Input update/state copying should always be handled
+            // after any input should be recorded; I.E. before this line.
+            // As a safety, input is the last thing to be updated before
+            // this frame ends.
+            input_update(delta);
+
+            // Update last time
+            app_state.last_time = current_time;
         }
     }
     app_state.is_running = FALSE;
+
+    event_shutdown();
+    input_shutdown();
+    renderer_shutdown();
     platform_shutdown(&app_state.platform);
     return TRUE;
 }
+
+// An event system is a way to send data between
+// various systems in the engine.
