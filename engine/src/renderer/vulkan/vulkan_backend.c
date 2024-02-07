@@ -1,5 +1,6 @@
 #include "vulkan_backend.h"
 #include "vulkan_platform.h"
+#include "vulkan_device.h"
 
 #include "vulkan_types.inl"
 #include "core/logger.h"
@@ -145,7 +146,21 @@ b8 vulkan_renderer_backend_initialize(
 
     KDEBUG("Vulkan debugger created.");
 #endif
+    // Surface
+    KDEBUG("Creating Vulkan surface...");
+    if (!platform_create_vulkan_surface(plat_state, &context))
+    {
+        KERROR("Failed to create platform surface!");
+        return FALSE;
+    }
+    KDEBUG("Vulkan surface created.")
 
+    // Device creation
+    if (!vulkan_device_create(&context))
+    {
+        KERROR("Failed to create device!");
+        return FALSE;
+    }
 
     KINFO("Vulkan renderer initialized successfully.");
     return TRUE;
