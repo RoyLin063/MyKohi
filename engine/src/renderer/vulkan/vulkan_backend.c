@@ -1,6 +1,7 @@
 #include "vulkan_backend.h"
 #include "vulkan_platform.h"
 #include "vulkan_device.h"
+#include "vulkan_swapchain.h"
 
 #include "vulkan_types.inl"
 #include "core/logger.h"
@@ -22,11 +23,16 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback
 // static vulkan context
 static vulkan_context context;
 
+i32 find_memory_index(u32 type_filter, u32 property_flags);
+
 b8 vulkan_renderer_backend_initialize(
     struct renderer_backend* backend,
     char const* application_name,
     struct platform_state* plat_state)
 {
+    // Function pointers
+    context.find_memory_index = find_memory_index;
+
     // TODO: custom allocator.
     context.allocator = 0;
 
@@ -162,12 +168,39 @@ b8 vulkan_renderer_backend_initialize(
         return FALSE;
     }
 
+    // Swapchain
+    vulkan_swapchain_create(
+        &context,
+        context.framebuffer_width,
+        context.framebuffer_height,
+        &context.swapchain);
+
     KINFO("Vulkan renderer initialized successfully.");
     return TRUE;
 }
 
 void vulkan_renderer_backend_shutdown(struct renderer_backend* backend)
 {
+    // Destroy in the opposite order of creation.
+
+    // Swapchain
+    vulkan_swapchain_destroy(&context, &context.swapchain);
+    
+    KDEBUG("Destroying Vulkan device...");
+    vulkan_device_destroy(&context);
+
+    KDEBUG("Destroying vulkan surface...");
+    if (context.surface)
+    {
+        vkDestroySurfaceKHR(
+            context.instance,
+            context.surface,
+            context.allocator
+        );
+        context.surface = 0;
+    }
+
+
     // Although close applications will destroy all resources,
     // prefer to destroy resources explicitly.
     // Sometimes not destroy explicitly will cause some problem.
@@ -228,4 +261,19 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback
             break;
     }
     return VK_FALSE;
+}
+
+i32 find_memory_index(u32 type_filter, u32 property_flags) {
+    VkPhysicalDeviceMemoryProperties memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(context.device.physical_device, &memory_properties);
+
+    for (u32 i = 0; i < memory_properties.memoryTypeCount; ++i) {
+        // Check each memory type to see if its bit is set to 1.
+        if (type_filter & (1 << i) && (memory_properties.memoryTypes[i].propertyFlags & property_flags) == property_flags) {
+            return i;
+        }
+    }
+
+    KWARN("Unable to find suitable memory type!");
+    return -1;
 }
